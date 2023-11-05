@@ -122,7 +122,12 @@ def request_json(
         method = "GET"
         headers["user-agent"] = get_user_agent(agent)
 
-    initial_cache_state = session._is_cache_disabled  # yes, i'm a bad person
+    if '_is_cache_disabled' in dir(session):
+        initial_cache_state = session._is_cache_disabled  # yes, i'm a bad person
+        need_restore = True
+    else:
+        need_restore = False
+
     try:
         session._is_cache_disabled = not cache
         response = session.request(
@@ -148,7 +153,8 @@ def request_json(
         log.info("status: %d", status)
         log.debug("content: %s", content)
     finally:
-        session._is_cache_disabled = initial_cache_state
+        if need_restore:
+            session._is_cache_disabled = initial_cache_state
     return status, content
 
 

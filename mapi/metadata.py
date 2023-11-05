@@ -25,6 +25,8 @@ class Metadata(MutableMapping):
         "extension",
         "group",
         "quality",
+        "runtime",
+        "vote",
     }
     fields_extra = {"extension", "group", "quality"}
     fields_numeric = {"season", "episode", "year"}

@@ -189,9 +189,12 @@ class TMDb(Provider):
         yield MetadataMovie(
             title=response["title"],
             date=response["release_date"],
+            year=response["release_date"][:4],
             synopsis=response["overview"],
             media="movie",
             id_tmdb=response["id"],
+            id_imdb=response["imdb_id"],
+            runtime=response["runtime"],
         )
 
     def _search_id_tmdb(self, id_tmdb):
@@ -200,9 +203,12 @@ class TMDb(Provider):
         yield MetadataMovie(
             title=response["title"],
             date=response["release_date"],
+            year=response["release_date"][:4],
             synopsis=response["overview"],
             media="movie",
-            id_tmdb=ustr(id_tmdb),
+            id_tmdb=response["id"],
+            id_imdb=response["imdb_id"],
+            runtime=response["runtime"],
         )
 
     def _search_title(self, title, year):
@@ -223,6 +229,9 @@ class TMDb(Provider):
                         date=entry["release_date"],
                         synopsis=entry["overview"],
                         id_tmdb=ustr(entry["id"]),
+                        id_imdb=entry["imdb_id"],
+                        year=entry["release_date"][:4],
+                        runtime=entry["runtime"],
                     )
                 except ValueError:
                     continue
