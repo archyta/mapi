@@ -1,5 +1,5 @@
 # coding=utf-8
-
+import re
 from re import match
 
 from mapi.exceptions import (
@@ -22,6 +22,9 @@ __all__ = [
     "tvdb_series_id",
     "tvdb_series_id_episodes",
     "tvdb_series_id_episodes_query",
+    "tvdbv4_login",
+    "tvdbv4_search",
+    "imdb_suggestion",
 ]
 
 OMDB_MEDIA_TYPES = {"episode", "movie", "series"}
@@ -54,15 +57,15 @@ TVDB_LANGUAGE_CODES = [
 
 
 def omdb_title(
-    api_key,
-    id_imdb=None,
-    media_type=None,
-    title=None,
-    season=None,
-    episode=None,
-    year=None,
-    plot=None,
-    cache=True,
+        api_key,
+        id_imdb=None,
+        media_type=None,
+        title=None,
+        season=None,
+        episode=None,
+        year=None,
+        plot=None,
+        cache=True,
 ):
     """
     Lookup media using the Open Movie Database.
@@ -134,7 +137,7 @@ def omdb_search(api_key, query, year=None, media_type=None, page=1, cache=True):
 
 
 def tmdb_find(
-    api_key, external_source, external_id, language="en-US", cache=True
+        api_key, external_source, external_id, language="en-US", cache=True
 ):
     """
     Search for The Movie Database objects using another DB's foreign key.
@@ -195,7 +198,7 @@ def tmdb_movies(api_key, id_tmdb, language="en-US", cache=True):
 
 
 def tmdb_search_movies(
-    api_key, title, year=None, adult=False, region=None, page=1, cache=True
+        api_key, title, year=None, adult=False, region=None, page=1, cache=True
 ):
     """
     Search for movies using The Movie Database.
@@ -342,7 +345,7 @@ def tvdb_series_id_episodes(token, id_tvdb, page=1, lang="en", cache=True):
 
 
 def tvdb_series_id_episodes_query(
-    token, id_tvdb, episode=None, season=None, page=1, lang="en", cache=True
+        token, id_tvdb, episode=None, season=None, page=1, lang="en", cache=True
 ):
     """
     Allows the user to query against episodes for the given series.
@@ -374,7 +377,7 @@ def tvdb_series_id_episodes_query(
 
 
 def tvdb_search_series(
-    token, series=None, id_imdb=None, id_zap2it=None, lang="en", cache=True
+        token, series=None, id_imdb=None, id_zap2it=None, lang="en", cache=True
 ):
     """
     Allows the user to search for a series based on the following parameters.
@@ -403,3 +406,80 @@ def tvdb_search_series(
     elif status != 200 or not content.get("data"):  # pragma: no cover
         raise MapiNetworkException("TVDb down or unavailable?")
     return content
+
+
+def tvdbv4_login(api_key, pin):
+    """
+    Logs into TVDb using the provided api key.
+
+    Note: You can register for a free TVDb key at thetvdb.com/?tab=apiregister
+    Online docs: api.thetvdb.com/swagger#!/Authentication/post_login.
+    """
+    url = "https://api4.thetvdb.com/v4/login"
+    body = {"apikey": api_key, "pin": pin}
+    status, content = request_json(url, body=body, cache=False)
+    if status == 401:
+        raise MapiProviderException("invalid api key and pin")
+    elif status != 200 or not content.get("data") or not content.get("data").get("token"):  # pragma: no cover
+        raise MapiNetworkException("TVDb down or unavailable?")
+    return content.get("data").get("token")
+
+
+def tvdbv4_search(
+        token, query, kind=None, year=None, lang="en", cache=True
+):
+    """
+    Allows the user to search for a series, movies, people, or companies.
+
+    Online docs: https://thetvdb.github.io/v4-api/#/Search/
+    Note: results a maximum of 100 entries per page, no option for pagination.
+    """
+    if lang not in TVDB_LANGUAGE_CODES:
+        raise MapiProviderException(
+            "'lang' must be one of %s" % ",".join(TVDB_LANGUAGE_CODES)
+        )
+    url = "https://api4.thetvdb.com/v4/search"
+    parameters = {"query": query}
+    if kind:
+        parameters["kind"] = kind
+    if year:
+        parameters["year"] = year
+    headers = {"Accept-Language": lang, "Authorization": "Bearer %s" % token}
+    status, content = request_json(
+        url, parameters, headers=headers, cache=cache
+    )
+    if status == 401:
+        raise MapiProviderException("invalid token")
+    elif status == 405:
+        raise MapiProviderException(
+            "series, id_imdb, id_zap2it parameters are mutually exclusive"
+        )
+    elif status == 404:  # pragma: no cover
+        raise MapiNotFoundException
+    elif status != 200 or not content.get("data"):  # pragma: no cover
+        raise MapiNetworkException("TVDb down or unavailable?")
+    return content
+
+
+def imdb_suggestion(query, year=None, cache=True):
+    """
+    Search for meta from IMDB.com.
+
+    """
+    if not query:
+        raise MapiProviderException("query must be specified")
+    # 将query中的特殊字符替换为_，以便于在url中使用
+    query = re.sub(r"[^a-zA-Z0-9]", "_", query)
+    query = query.replace("__", "_")
+    if year:
+        query = "%s_%s" % (query, year)
+
+    url = "https://v3.sg.media-imdb.com/suggestion/x/%s.json" % (query)   # ?includeVideos=1&limit=10
+    status, content = request_json(url, cache=cache)
+    if status != 200 or not isinstance(content, dict):
+        raise MapiNetworkException("IMDb down or unavailable?")
+    return content
+
+if __name__ == '__main__':
+    ctn = imdb_suggestion('The Matrix', 1999)
+    print(ctn)

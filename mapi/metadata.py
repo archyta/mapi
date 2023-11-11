@@ -17,6 +17,12 @@ class Metadata(MutableMapping):
     """
 
     fields_default = {
+        "id_imdb",
+        "id_tmdb",
+        "id_tvdb",
+        "id_tvmaze",
+        "id_trakt",
+        "id_EIDR",
         "date",
         "year",
         "media",
@@ -26,7 +32,9 @@ class Metadata(MutableMapping):
         "group",
         "quality",
         "runtime",
-        "vote",
+        "vote_average",
+        "original_title",
+        "original_language",
     }
     fields_extra = {"extension", "group", "quality"}
     fields_numeric = {"season", "episode", "year"}
@@ -271,7 +279,7 @@ class MetadataMovie(Metadata):
     """Movie Metadata class.
     """
 
-    fields_accepted = Metadata.fields_accepted | {"id_imdb", "id_tmdb"}
+    fields_accepted = Metadata.fields_accepted | {"id_imdb", "id_tmdb", "id_tvmaze", "id_tvdb", "id_trakt", "id_EIDR"}
 
     def __init__(self, **params):
         super(MetadataMovie, self).__init__(**params)
@@ -291,11 +299,12 @@ class MetadataTelevision(Metadata):
     """
 
     fields_accepted = Metadata.fields_accepted | {
-        "episode",
         "id_imdb",
         "id_tvdb",
-        "season",
+        "id_tmdb",
         "series",
+        "season",
+        "episode",
     }
 
     def __init__(self, **params):
@@ -304,7 +313,7 @@ class MetadataTelevision(Metadata):
 
     def __format__(self, format_spec):
         return super(MetadataTelevision, self).__format__(
-            format_spec or "{series} - {season:02}x{episode:02} - {title}"
+            format_spec or "{series} - S{season:02}E{episode:02} - {title}"
         )
 
     def __str__(self):
