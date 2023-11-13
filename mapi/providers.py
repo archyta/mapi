@@ -100,21 +100,22 @@ class OMDb(Provider):
             raise MapiProviderException("OMDb require API key")
 
     def search(self, id_key=None, **parameters):
-        title = parameters.get("title")
+        title = parameters.get("title") or parameters.get("query")
         year = parameters.get("year")
         id_imdb = id_key or parameters.get("id_imdb")
+        kind = parameters.get("kind", "movie")
 
         if id_imdb:
             results = self._lookup_movie(id_imdb)
         elif title:
-            results = self._search_movie(title, year)
+            results = self._search_movie(title, year, kind=kind)
         else:
             raise MapiNotFoundException
         for result in results:
             yield result
 
-    def _lookup_movie(self, id_imdb):
-        response = omdb_title(self.api_key, id_imdb, cache=self._cache)
+    def _lookup_movie(self, id_imdb, kind='movie'):
+        response = omdb_title(self.api_key, id_imdb, media_type=kind, cache=self._cache)
         try:
             date = dt.strptime(response["Released"], "%d %b %Y").strftime(
                 "%Y-%m-%d"
@@ -135,7 +136,7 @@ class OMDb(Provider):
             del meta["synopsis"]
         yield meta
 
-    def _search_movie(self, title, year):
+    def _search_movie(self, title, year, kind='movie'):
         year_from, year_to = year_expand(year)
         found = False
         page = 1
@@ -176,56 +177,92 @@ class TMDb(Provider):
         """Searches TMDb for movie metadata."""
         id_tmdb = id_key or parameters.get("id_tmdb")
         id_imdb = parameters.get("id_imdb")
-        title = parameters.get("title")
+        title = parameters.get("title") or parameters.get("query")
         year = parameters.get("year")
+        kind = parameters.get("kind", "movie")
 
         if id_tmdb:
-            results = self._search_id_tmdb(id_tmdb)
+            results = self._search_id_tmdb(id_tmdb, kind=kind)
         elif id_imdb:
-            results = self._search_id_imdb(id_imdb)
+            results = self._search_id_imdb(id_imdb, kind=kind)
         elif title:
-            results = self._search_title(title, year)
+            results = self._search_title(title, year, kind)
         else:
             raise MapiNotFoundException
         for result in results:
             yield result
 
-    def _search_id_imdb(self, id_imdb):
+    def _search_id_imdb(self, id_imdb, kind='movie'):
         response = tmdb_find(
             self.api_key, "imdb_id", id_imdb, cache=self.cache
-        )["movie_results"][0]
-        yield MetadataMovie(
-            title=response["title"],
-            date=response["release_date"],
-            year=response["release_date"][:4],
-            synopsis=response["overview"],
-            media="movie",
-            id_tmdb=response["id"],
-            id_imdb=response["imdb_id"],
-            runtime=response["runtime"],
-            vote_average=response["vote_average"],
-            original_language=response["original_language"],
-            original_title=response["original_title"],
         )
+        if not response["movie_results"] and not response["tv_results"]:
+            raise MapiNotFoundException
+        if kind == 'movie':
+            response = response["movie_results"][0]
+            meta = MetadataMovie(
+                title=response["title"],
+                date=response["release_date"],
+                year=response["release_date"][:4],
+                synopsis=response["overview"],
+                id_tmdb=response["id"],
+                id_imdb=response["imdb_id"],
+                runtime=response.get("runtime", None),
+                vote_average=response["vote_average"],
+                original_language=response["original_language"],
+                original_title=response["original_title"],
+            )
+        else:
+            response["tv_results"][0]
+            meta = MetadataTelevision(
+                series=response["name"],
+                title=response["name"],
+                date=response["first_air_date"],
+                year=response["first_air_date"][:4],
+                synopsis=response["overview"],
+                id_tmdb=response["id"],
+                id_imdb=response["imdb_id"],
+                runtime=response.get("episode_run_time", None),
+                vote_average=response["vote_average"],
+                original_language=response["original_language"],
+                original_title=response["original_name"],
+            )
+        yield meta
 
-    def _search_id_tmdb(self, id_tmdb):
+    def _search_id_tmdb(self, id_tmdb, kind='movie'):
         assert id_tmdb
-        response = tmdb_movies(self.api_key, id_tmdb, cache=self.cache)
-        yield MetadataMovie(
-            title=response["title"],
-            date=response["release_date"],
-            year=response["release_date"][:4],
-            synopsis=response["overview"],
-            media="movie",
-            id_tmdb=response["id"],
-            id_imdb=response["imdb_id"],
-            runtime=response["runtime"],
-            vote_average=response["vote_average"],
-            original_language=response["original_language"],
-            original_title=response["original_title"],
-        )
+        response = tmdb_movies_or_series(self.api_key, id_tmdb, kind=kind, cache=self.cache)
+        if kind == 'movie':
+            meta = MetadataMovie(
+                title=response["title"],
+                date=response["release_date"],
+                year=response["release_date"][:4],
+                synopsis=response["overview"],
+                media="movie",
+                id_tmdb=response["id"],
+                id_imdb=response.get("imdb_id", response.get('external_ids', {"imdb_id":None}).get("imdb_id", None)),
+                runtime=response["runtime"],
+                vote_average=response["vote_average"],
+                original_language=response["original_language"],
+                original_title=response["original_title"],
+            )
+        else:
+            meta = MetadataTelevision(
+                series=response["name"],
+                title=response["name"],
+                date=response["first_air_date"],
+                synopsis=response["overview"],
+                id_tmdb=response["id"],
+                id_imdb=response.get('external_ids', {"imdb_id":None}).get("imdb_id", None),
+                year=response["first_air_date"][:4],
+                runtime=response.get("episode_run_time", None),
+                vote_average=response["vote_average"],
+                original_language=response["original_language"],
+                original_title=response["original_name"],
+            )
+        yield meta
 
-    def _search_title(self, title, year):
+    def _search_title(self, title, year, kind='movie'):
         assert title
         found = False
         year_from, year_to = year_expand(year)
@@ -233,23 +270,39 @@ class TMDb(Provider):
         page_max = 5  # each page yields a maximum of 20 results
 
         while True:
-            response = tmdb_search_movies(
-                self.api_key, title, year, page=page, cache=self.cache
+            response = tmdb_search(
+                self.api_key, title, year, kind=kind, page=page, cache=self.cache
             )
             for entry in response["results"]:
                 try:
-                    meta = MetadataMovie(
-                        title=entry["title"],
-                        date=entry["release_date"],
-                        synopsis=entry["overview"],
-                        id_tmdb=ustr(entry["id"]),
-                        id_imdb=entry["imdb_id"],
-                        year=entry["release_date"][:4],
-                        runtime=entry["runtime"],
-                        vote_average=entry["vote_average"],
-                        original_language=entry["original_language"],
-                        original_title=entry["original_title"],
-                    )
+                    if kind and kind == "movie":
+                        meta = MetadataMovie(
+                            title=entry["title"],
+                            date=entry["release_date"],
+                            synopsis=entry["overview"],
+                            id_tmdb=ustr(entry["id"]),
+                            id_imdb=entry.get("imdb_id", None),
+                            year=entry["release_date"][:4],
+                            runtime=entry.get("runtime", None),
+                            vote_average=entry["vote_average"],
+                            original_language=entry["original_language"],
+                            original_title=entry["original_title"],
+                        )
+                    elif kind and kind.lower() in ["tv", "series"]:
+                        meta = MetadataTelevision(
+                            series=entry["name"],
+                            date=entry["first_air_date"],
+                            synopsis=entry["overview"],
+                            id_tmdb=ustr(entry["id"]),
+                            id_imdb=entry.get("imdb_id", None),
+                            year=entry["first_air_date"][:4],
+                            runtime=entry.get("episode_run_time", None),
+                            vote_average=entry["vote_average"],
+                            original_language=entry["original_language"],
+                            original_title=entry["original_name"],
+                        )
+                    else:
+                        raise MapiProviderException("Invalid media type: %s" % kind)
                 except ValueError:
                     continue
                 if year_from <= int(meta["year"]) <= year_to:
@@ -282,6 +335,7 @@ class TVDb(Provider):
 
         TODO: Consider making parameters for episode ids
         """
+        title = parameters.get("title") or parameters.get("query") or parameters.get("series")
         episode = parameters.get("episode")
         id_tvdb = id_key or parameters.get("id_tvdb")
         id_imdb = parameters.get("id_imdb")
@@ -425,7 +479,7 @@ class TVDbV4(Provider):
         使用imdb_id/tvdb_id/或者title / title+year方式查询影片信息
 
         """
-        query = parameters.get("query")
+        query = parameters.get("query") or parameters.get("title")
         kind = parameters.get("kind")
         year = parameters.get("year")
         episode = parameters.get("episode")
@@ -533,7 +587,7 @@ class TVDbV4(Provider):
         found = False
         meta_data = tvdbv4_search(self.token, query, kind=kind, year=year, cache=self.cache)
 
-        for data in meta_data["data"]:    # TODO: Only search series now, no season & episode yet.
+        for data in meta_data["data"]:  # TODO: Only search series now, no season & episode yet.
             try:
                 found = True
                 id_imdb = next((item['id'] for item in data['remote_ids'] if 'remote_ids' in data and item['sourceName'] == 'IMDB'), None)
@@ -600,7 +654,7 @@ class IMDb(Provider):
         super(IMDb, self).__init__(**options)
 
     def search(self, id_key=None, **parameters):
-        title = parameters.get("query")
+        title = parameters.get("query") or parameters.get("title")
         year = parameters.get("year")
         kind = parameters.get("kind")
         id_imdb = id_key or parameters.get("id_imdb")
@@ -655,16 +709,15 @@ class IMDb(Provider):
                         yield meta
                 elif kind == 'series':
                     if entry["qid"].lower() in ['tvseries', 'tvminiseries', 'tvshort', 'tvspecial']:
-                         meta = MetadataTelevision(
-                             title=entry["l"],
-                             id_imdb=entry["id"],
-                             year=entry["y"],
-                         )
-                         yield meta
+                        meta = MetadataTelevision(
+                            title=entry["l"],
+                            id_imdb=entry["id"],
+                            year=entry["y"],
+                        )
+                        yield meta
                 else:
                     raise MapiProviderException(f"kind {kind} not support")
         except MapiNotFoundException:
             raise
         if not found:
             raise MapiNotFoundException
-

@@ -4,7 +4,7 @@
 
 import pytest
 
-from mapi.endpoints import tmdb_find, tmdb_movies, tmdb_search_movies
+from mapi.endpoints import tmdb_find, tmdb_movies_or_series, tmdb_search
 from mapi.exceptions import MapiNotFoundException, MapiProviderException
 from tests import JUNK_TEXT
 
@@ -94,7 +94,7 @@ def test_tmdb_movies__success(tmdb_api_key):
         "vote_average",
         "vote_count",
     }
-    result = tmdb_movies(tmdb_api_key, GOONIES_TMDB_ID)
+    result = tmdb_movies_or_series(tmdb_api_key, GOONIES_TMDB_ID)
     assert isinstance(result, dict)
     assert set(result.keys()) == expected_top_level_keys
     assert result.get("original_title") == "The Goonies"
@@ -102,19 +102,19 @@ def test_tmdb_movies__success(tmdb_api_key):
 
 def test_tmdb_movies__api_key_fail():
     with pytest.raises(MapiProviderException):
-        tmdb_movies(JUNK_TEXT, "", cache=False)
+        tmdb_movies_or_series(JUNK_TEXT, "", cache=False)
 
 
 @pytest.mark.usefixtures("tmdb_api_key")
 def test_tmdb_movies__id_tmdb_fail(tmdb_api_key):
     with pytest.raises(MapiProviderException):
-        tmdb_movies(tmdb_api_key, JUNK_TEXT, cache=False)
+        tmdb_movies_or_series(tmdb_api_key, JUNK_TEXT, cache=False)
 
 
 @pytest.mark.usefixtures("tmdb_api_key")
 def test_tmdb_movies__not_found(tmdb_api_key):
     with pytest.raises(MapiNotFoundException):
-        tmdb_movies(tmdb_api_key, "1" * 10)
+        tmdb_movies_or_series(tmdb_api_key, "1" * 10)
 
 
 @pytest.mark.usefixtures("tmdb_api_key")
@@ -141,31 +141,31 @@ def test_tmdb_search_movies__success(tmdb_api_key):
         "vote_average",
         "vote_count",
     }
-    result = tmdb_search_movies(tmdb_api_key, "the goonies", 1985)
+    result = tmdb_search(tmdb_api_key, "the goonies", 1985)
     assert isinstance(result, dict)
     assert set(result.keys()) == expected_top_level_keys
     assert isinstance(result["results"], list)
     assert expected_results_keys == set(result.get("results", [{}])[0].keys())
     assert len(result["results"]) == 1
     assert result["results"][0]["original_title"] == "The Goonies"
-    result = tmdb_search_movies(tmdb_api_key, "the goonies")
+    result = tmdb_search(tmdb_api_key, "the goonies")
     assert len(result["results"]) > 1
 
 
 def test_tmdb_search_movies__bad_api_key():
     with pytest.raises(MapiProviderException):
-        tmdb_search_movies(JUNK_TEXT, "the goonies", cache=False)
+        tmdb_search(JUNK_TEXT, "the goonies", cache=False)
 
 
 @pytest.mark.usefixtures("tmdb_api_key")
 def test_tmdb_search_movies__bad_title(tmdb_api_key):
     with pytest.raises(MapiNotFoundException):
-        tmdb_search_movies(tmdb_api_key, JUNK_TEXT, cache=False)
+        tmdb_search(tmdb_api_key, JUNK_TEXT, cache=False)
 
 
 @pytest.mark.usefixtures("tmdb_api_key")
 def test_tmdb_search_movies__bad_year(tmdb_api_key):
     with pytest.raises(MapiProviderException):
-        tmdb_search_movies(
+        tmdb_search(
             tmdb_api_key, "the goonies", year=JUNK_TEXT, cache=False
         )

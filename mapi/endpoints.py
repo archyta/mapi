@@ -13,8 +13,8 @@ __all__ = [
     "omdb_search",
     "omdb_title",
     "tmdb_find",
-    "tmdb_movies",
-    "tmdb_search_movies",
+    "tmdb_movies_or_series",
+    "tmdb_search",
     "tvdb_episodes_id",
     "tvdb_login",
     "tvdb_refresh_token",
@@ -53,6 +53,7 @@ TVDB_LANGUAGE_CODES = [
     "sv",
     "tr",
     "zh",
+    "ar",
 ]
 
 
@@ -148,7 +149,7 @@ def tmdb_find(
 
     Online docs: developers.themoviedb.org/3/find.
     """
-    sources = ["imdb_id", "freebase_mid", "freebase_id", "tvdb_id", "tvrage_id"]
+    sources = ["imdb_id", "freebase_mid", "freebase_id", "tvdb_id", "tvrage_id", "facebook_id", "twitter_id", "instagram_id", "tiktok_id", "wikidata_id", "youtube_id"]
     if external_source not in sources:
         raise MapiProviderException("external_source must be in %s" % sources)
     if external_source == "imdb_id" and not match(r"tt\d+", external_id):
@@ -176,17 +177,21 @@ def tmdb_find(
     return content
 
 
-def tmdb_movies(api_key, id_tmdb, language="en-US", cache=True):
+def tmdb_movies_or_series(api_key, id_tmdb, kind='movie', language="en-US", cache=True):
     """
     Lookup a movie item using The Movie Database.
 
     Online docs: developers.themoviedb.org/3/movies.
     """
     try:
-        url = "https://api.themoviedb.org/3/movie/%d" % int(id_tmdb)
+        if kind == 'movie':
+            url = "https://api.themoviedb.org/3/movie/%d" % int(id_tmdb)
+        else:
+            url = "https://api.themoviedb.org/3/tv/%d" % int(id_tmdb)
     except ValueError:
         raise MapiProviderException("id_tmdb must be numeric")
-    parameters = {"api_key": api_key, "language": language}
+    parameters = {"api_key": api_key, "language": language,
+                  "append_to_response": "external_ids,translations,alternative_titles"}
     status, content = request_json(url, parameters, cache=cache)
     if status == 401:
         raise MapiProviderException("invalid API key")
@@ -197,15 +202,15 @@ def tmdb_movies(api_key, id_tmdb, language="en-US", cache=True):
     return content
 
 
-def tmdb_search_movies(
-        api_key, title, year=None, adult=False, region=None, page=1, cache=True
+def tmdb_search(
+        api_key, title, year=None, kind=None, adult=False, region=None, page=1, cache=True
 ):
     """
     Search for movies using The Movie Database.
 
     Online docs: developers.themoviedb.org/3/search/search-movies.
     """
-    url = "https://api.themoviedb.org/3/search/movie"
+    url = "https://api.themoviedb.org/3/search/movie" if not kind or kind == "movie" else "https://api.themoviedb.org/3/search/tv"
     try:
         if year:
             year = int(year)
@@ -218,6 +223,7 @@ def tmdb_search_movies(
         "include_adult": adult,
         "region": region,
         "year": year,
+        "append_to_response": "external_ids,translations,alternative_titles",
     }
     status, content = request_json(url, parameters, cache=cache)
     if status == 401:
